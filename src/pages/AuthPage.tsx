@@ -1,34 +1,86 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { ArrowLeft, Eye, EyeOff, CheckCircle, Instagram, Bookmark, TrendingUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from 'sonner';
 
 const AuthPage = () => {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [isSignIn, setIsSignIn] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: ''
   });
+  const { signIn, signUp, user } = useAuth();
+
+  // Redirect to main app if already authenticated
+  useEffect(() => {
+    if (user) {
+      navigate('/app');
+    }
+  }, [user, navigate]);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
+  const handleSubmit = async () => {
+    if (!formData.email || !formData.password || (!isSignIn && !formData.name)) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+
+    if (formData.password.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
+
+    setLoading(true);
+    
+    try {
+      const { error } = isSignIn 
+        ? await signIn(formData.email, formData.password)
+        : await signUp(formData.email, formData.password);
+
+      if (error) {
+        if (error.message?.includes('Invalid login credentials')) {
+          toast.error('Invalid email or password');
+        } else if (error.message?.includes('User already registered')) {
+          toast.error('An account with this email already exists');
+        } else if (error.message?.includes('Email not confirmed')) {
+          toast.error('Please check your email and confirm your account');
+        } else {
+          toast.error(error.message || 'Authentication failed');
+        }
+      } else {
+        if (isSignIn) {
+          toast.success('Login successful!');
+          navigate('/app');
+        } else {
+          toast.success('Account created! Please check your email to confirm your account.');
+        }
+      }
+    } catch (error) {
+      toast.error('An unexpected error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSignUp = () => {
-    // Navigate to main app after signup
-    navigate('/app');
+    handleSubmit();
   };
 
   const handleSignIn = () => {
     if (isSignIn) {
-      // Navigate to main app after signin
-      navigate('/app');
+      handleSubmit();
     } else {
       // Switch to sign in form
       setIsSignIn(true);
@@ -159,9 +211,16 @@ const AuthPage = () => {
           <Button
             onClick={isSignIn ? handleSignIn : handleSignUp}
             className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-base"
-            disabled={isSignIn ? (!formData.email || !formData.password) : (!formData.name || !formData.email || !formData.password)}
+            disabled={loading || (isSignIn ? (!formData.email || !formData.password) : (!formData.name || !formData.email || !formData.password))}
           >
-            {isSignIn ? "Sign In →" : "Sign Up →"}
+            {loading ? (
+              <div className="flex items-center gap-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                {isSignIn ? "Signing In..." : "Signing Up..."}
+              </div>
+            ) : (
+              isSignIn ? "Sign In →" : "Sign Up →"
+            )}
           </Button>
         </div>
       </div>
