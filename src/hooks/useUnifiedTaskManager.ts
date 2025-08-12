@@ -1,25 +1,75 @@
 import { useState, useCallback } from 'react';
-import { Task, TaskManagerState, TaskActions, TaskAttachment, TaskComment } from '@/types/task';
-import { Comment } from '@/components/CommentManager';
-import { TaskLink } from '@/components/link/LinkManager';
-import { 
-  generateTaskId, 
-  updateTaskRecursively, 
-  deleteTaskRecursively, 
-  addSubTaskRecursively, 
-  toggleTaskExpandedRecursively, 
-  toggleTaskCompleteRecursively,
-  expandParentTasksRecursively 
-} from '@/utils/taskUtils';
-import { validateTaskTitle } from '@/utils/taskValidation';
+import { Task, TaskManagerState, TaskActions } from '@/types/task';
+import { useSupabaseTasks, SupabaseTask } from './useSupabaseTasks';
+import { useSupabaseWorkspaces } from './useSupabaseWorkspaces';
+import { useSupabaseMissions } from './useSupabaseMissions';
 import { toast } from 'sonner';
 
-const initialTasks: Task[] = [];
+// Convert SupabaseTask to legacy Task format
+const convertSupabaseTaskToLegacy = (supabaseTask: SupabaseTask): Task => {
+  return {
+    id: supabaseTask.id,
+    title: supabaseTask.title,
+    description: supabaseTask.description,
+    completed: supabaseTask.completed,
+    priority: supabaseTask.priority as any,
+    categoryId: supabaseTask.category_id,
+    createdAt: new Date(supabaseTask.created_at),
+    color: supabaseTask.color,
+    date: supabaseTask.scheduled_date ? new Date(supabaseTask.scheduled_date) : new Date(),
+    missionId: supabaseTask.mission_id,
+    startTime: supabaseTask.start_time ? new Date(supabaseTask.start_time) : undefined,
+    endTime: supabaseTask.end_time ? new Date(supabaseTask.end_time) : undefined,
+    subTasks: supabaseTask.sub_tasks?.map(convertSupabaseTaskToLegacy) || [],
+    isExpanded: supabaseTask.is_expanded,
+    order: supabaseTask.task_order,
+    kanbanColumn: supabaseTask.kanban_column,
+    quadrant: supabaseTask.matrix_quadrant,
+    parentId: supabaseTask.parent_id,
+    attachments: []
+  };
+};
+
+// Convert legacy Task to SupabaseTask format
+const convertLegacyTaskToSupabase = (task: Partial<Task>, workspaceId: string, missionId: string): Omit<SupabaseTask, 'id' | 'user_id' | 'created_at' | 'updated_at' | 'sub_tasks'> => {
+  return {
+    title: task.title || '',
+    description: task.description || 'Click to add description...',
+    color: task.color || '#3B82F6',
+    priority: task.priority || 'P7',
+    workspace_id: workspaceId,
+    mission_id: missionId,
+    category_id: task.categoryId,
+    scheduled_date: task.date?.toISOString().split('T')[0],
+    start_time: task.startTime?.toISOString(),
+    end_time: task.endTime?.toISOString(),
+    completed: task.completed || false,
+    kanban_column: task.kanbanColumn || 'todo',
+    matrix_quadrant: task.quadrant,
+    task_order: task.order || 0,
+    is_expanded: task.isExpanded || false,
+    parent_id: task.parentId
+  };
+};
 
 export const useUnifiedTaskManager = () => {
-  // Combined state from useTaskState and useTaskManager
+  const { selectedWorkspace } = useSupabaseWorkspaces();
+  const { missions } = useSupabaseMissions(selectedWorkspace?.id);
+  const {
+    tasks: supabaseTasks,
+    addTask: addSupabaseTask,
+    updateTask: updateSupabaseTask,
+    deleteTask: deleteSupabaseTask,
+    addAttachment,
+    addComment
+  } = useSupabaseTasks(selectedWorkspace?.id);
+
+  // Convert Supabase tasks to legacy format
+  const tasks = supabaseTasks.map(convertSupabaseTaskToLegacy);
+
+  // State management
   const [state, setState] = useState<TaskManagerState>({
-    tasks: initialTasks,
+    tasks: [],
     selectedTask: null,
     showAddTask: false,
     editingTask: null,
@@ -27,145 +77,115 @@ export const useUnifiedTaskManager = () => {
     selectedDate: new Date()
   });
 
-  const [comments, setComments] = useState<Comment[]>([]);
-  const [taskLinks, setTaskLinks] = useState<TaskLink[]>([]);
+  // Update state when Supabase tasks change
+  useState(() => {
+    setState(prev => ({ ...prev, tasks }));
+  });
 
-  // Core task operations (from useTaskState)
-  const addTask = useCallback((taskData: Omit<Task, 'id' | 'subTasks' | 'isExpanded' | 'order'> | Omit<Task, 'id' | 'subTasks' | 'isExpanded' | 'order' | 'category' | 'createdAt'>) => {
-    const newTask: Task = {
-      ...taskData,
-      id: generateTaskId(),
-      categoryId: 'categoryId' in taskData ? taskData.categoryId : undefined,
-      createdAt: 'createdAt' in taskData ? taskData.createdAt : new Date(),
-      subTasks: [],
-      isExpanded: true,
-      order: state.tasks.length,
-      attachments: taskData.attachments || []
-    };
-
-    if (taskData.parentId) {
-      setState(prev => ({
-        ...prev,
-        tasks: addSubTaskRecursively(prev.tasks, taskData.parentId!, newTask)
-      }));
-    } else {
-      setState(prev => ({
-        ...prev,
-        tasks: [...prev.tasks, newTask]
-      }));
+  // Core task operations
+  const addTask = useCallback(async (taskData: Omit<Task, 'id' | 'subTasks' | 'isExpanded' | 'order'> | Omit<Task, 'id' | 'subTasks' | 'isExpanded' | 'order' | 'createdAt' | 'categoryId'>) => {
+    if (!selectedWorkspace) {
+      toast.error('Please select a workspace first');
+      return null as any;
     }
 
-    setState(prev => ({ ...prev, selectedTask: newTask }));
-    return newTask;
-  }, [state.tasks]);
+    const defaultMission = missions[0];
+    if (!defaultMission) {
+      toast.error('Please create a mission first');
+      return null as any;
+    }
 
-  const addSubTask = useCallback((parentId: string, taskData: Omit<Task, 'id' | 'subTasks' | 'isExpanded' | 'order' | 'parentId'> | Omit<Task, 'id' | 'subTasks' | 'isExpanded' | 'order' | 'category' | 'createdAt' | 'parentId'>) => {
-    const newTask: Task = {
-      ...taskData,
-      id: generateTaskId(),
-      parentId,
-      categoryId: 'categoryId' in taskData ? taskData.categoryId : undefined,
-      createdAt: 'createdAt' in taskData ? taskData.createdAt : new Date(),
-      subTasks: [],
-      isExpanded: false,
-      order: 0,
-      attachments: taskData.attachments || []
+    const supabaseTaskData = convertLegacyTaskToSupabase(taskData, selectedWorkspace.id, defaultMission.id);
+    const result = await addSupabaseTask(supabaseTaskData);
+    
+    if (result) {
+      const newTask = convertSupabaseTaskToLegacy(result);
+      setState(prev => ({ ...prev, selectedTask: newTask }));
+      return newTask;
+    }
+    return null as any;
+  }, [selectedWorkspace, missions, addSupabaseTask]);
+
+  const addSubTask = useCallback(async (parentId: string, taskData: Omit<Task, 'id' | 'subTasks' | 'isExpanded' | 'order' | 'parentId'> | Omit<Task, 'id' | 'subTasks' | 'isExpanded' | 'order' | 'createdAt' | 'parentId' | 'categoryId'>) => {
+    if (!selectedWorkspace) {
+      toast.error('Please select a workspace first');
+      return null as any;
+    }
+
+    const defaultMission = missions[0];
+    if (!defaultMission) {
+      toast.error('Please create a mission first');
+      return null as any;
+    }
+
+    const supabaseTaskData = {
+      ...convertLegacyTaskToSupabase(taskData, selectedWorkspace.id, defaultMission.id),
+      parent_id: parentId
     };
+    
+    const result = await addSupabaseTask(supabaseTaskData);
+    return result ? convertSupabaseTaskToLegacy(result) : null as any;
+  }, [selectedWorkspace, missions, addSupabaseTask]);
 
-    setState(prev => ({
-      ...prev,
-      tasks: addSubTaskRecursively(prev.tasks, parentId, newTask)
-    }));
+  const updateTask = useCallback(async (taskId: string, updates: Partial<Task>) => {
+    if (!selectedWorkspace) return;
+    
+    const supabaseUpdates = convertLegacyTaskToSupabase(updates, selectedWorkspace.id, '');
+    await updateSupabaseTask(taskId, supabaseUpdates as any);
 
-    return newTask;
-  }, []);
-
-  const updateTask = useCallback((taskId: string, updates: Partial<Task>) => {
     setState(prev => {
-      const updatedTasks = updateTaskRecursively(prev.tasks, taskId, updates);
       const updatedSelectedTask = prev.selectedTask?.id === taskId 
         ? { ...prev.selectedTask, ...updates } 
         : prev.selectedTask;
       
       return {
         ...prev,
-        tasks: updatedTasks,
         selectedTask: updatedSelectedTask
       };
     });
-  }, []);
+  }, [selectedWorkspace, updateSupabaseTask]);
 
-  const deleteTask = useCallback((taskId: string) => {
+  const deleteTask = useCallback(async (taskId: string) => {
+    await deleteSupabaseTask(taskId);
     setState(prev => ({
       ...prev,
-      tasks: deleteTaskRecursively(prev.tasks, taskId),
       selectedTask: prev.selectedTask?.id === taskId ? null : prev.selectedTask
     }));
+  }, [deleteSupabaseTask]);
+
+  const toggleTaskComplete = useCallback(async (taskId: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (task) {
+      await updateTask(taskId, { completed: !task.completed });
+    }
+  }, [tasks, updateTask]);
+
+  const toggleTaskExpanded = useCallback(async (taskId: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (task) {
+      await updateTask(taskId, { isExpanded: !task.isExpanded });
+    }
+  }, [tasks, updateTask]);
+
+  const moveTask = useCallback(async (taskId: string, newParentId?: string) => {
+    await updateTask(taskId, { parentId: newParentId });
+  }, [updateTask]);
+
+  const expandParentTasks = useCallback(() => {
+    // This would need to be implemented based on task hierarchy
+    console.log('expandParentTasks not yet implemented for Supabase');
   }, []);
 
-  const toggleTaskComplete = useCallback((taskId: string) => {
-    setState(prev => ({
-      ...prev,
-      tasks: toggleTaskCompleteRecursively(prev.tasks, taskId)
-    }));
+  const deleteTasksByMissionIds = useCallback(async (missionIds: string[]) => {
+    // This is handled automatically by CASCADE DELETE in database
+    console.log('Tasks deleted automatically via CASCADE DELETE');
   }, []);
 
-  const toggleTaskExpanded = useCallback((taskId: string) => {
-    setState(prev => ({
-      ...prev,
-      tasks: toggleTaskExpandedRecursively(prev.tasks, taskId)
-    }));
-  }, []);
-
-  const moveTask = useCallback((taskId: string, newParentId?: string) => {
-    // Implementation for moving tasks between parents
-    console.log('Moving task:', taskId, 'to parent:', newParentId);
-  }, []);
-
-  const expandParentTasks = useCallback((taskId: string) => {
-    setState(prev => ({
-      ...prev,
-      tasks: expandParentTasksRecursively(prev.tasks, taskId)
-    }));
-  }, []);
-
-  const deleteTasksByMissionIds = useCallback((missionIds: string[]) => {
-    const deleteTasksByMissionRecursively = (taskList: Task[]): Task[] => {
-      return taskList.filter(task => !missionIds.includes(task.missionId)).map(task => ({
-        ...task,
-        subTasks: deleteTasksByMissionRecursively(task.subTasks)
-      }));
-    };
-    
-    setState(prev => ({
-      ...prev,
-      tasks: deleteTasksByMissionRecursively(prev.tasks),
-      selectedTask: prev.selectedTask && missionIds.includes(prev.selectedTask.missionId) ? null : prev.selectedTask
-    }));
-  }, []);
-
-  // Legacy compatibility methods (from useTaskManager)
-  const addTaskLegacy = useCallback((title: string, taskData?: Partial<Task>) => {
+  // Legacy compatibility methods
+  const addTaskLegacy = useCallback(async (title: string, taskData?: Partial<Task>) => {
     if (!title.trim()) return;
     
-    // Get first column ID from saved Kanban config for new tasks
-    let kanbanColumn = taskData?.kanbanColumn;
-    if (!kanbanColumn) {
-      try {
-        const saved = localStorage.getItem('kanban-grid-config');
-        if (saved) {
-          const config = JSON.parse(saved);
-          kanbanColumn = config.kanbanColumns?.[0]?.id || 'todo';
-        } else {
-          kanbanColumn = 'todo';
-        }
-      } catch {
-        kanbanColumn = 'todo';
-      }
-    }
-    
-    const newTask: Task = {
-      id: Date.now().toString(),
+    const newTaskData: Omit<Task, 'id' | 'subTasks' | 'isExpanded' | 'order'> = {
       title,
       description: taskData?.description || 'Click to add description...',
       completed: false,
@@ -174,83 +194,49 @@ export const useUnifiedTaskManager = () => {
       createdAt: new Date(),
       color: taskData?.color || '#3B82F6',
       date: taskData?.date || new Date(),
-      missionId: taskData?.missionId || 'default',
+      missionId: taskData?.missionId || '',
       startTime: taskData?.startTime,
       endTime: taskData?.endTime,
-      subTasks: [],
-      isExpanded: false,
-      order: state.tasks.length,
-      kanbanColumn,
+      kanbanColumn: taskData?.kanbanColumn || 'todo',
+      attachments: [],
       ...taskData
     };
     
-    setState(prev => ({
-      ...prev,
-      tasks: [newTask, ...prev.tasks],
-      selectedTask: newTask
-    }));
-    
-    return newTask;
-  }, [state.tasks]);
+    return await addTask(newTaskData);
+  }, [addTask]);
 
-  const updateTaskDescription = useCallback((taskId: string, description: string) => {
-    const updateDescriptionRecursively = (taskList: Task[]): Task[] => {
-      return taskList.map(task => {
-        if (task.id === taskId) {
-          return { ...task, description };
-        }
-        return { ...task, subTasks: updateDescriptionRecursively(task.subTasks) };
-      });
-    };
-    
-    setState(prev => ({
-      ...prev,
-      tasks: updateDescriptionRecursively(prev.tasks),
-      selectedTask: prev.selectedTask?.id === taskId ? { ...prev.selectedTask, description } : prev.selectedTask
-    }));
-  }, []);
+  const updateTaskDescription = useCallback(async (taskId: string, description: string) => {
+    await updateTask(taskId, { description });
+  }, [updateTask]);
 
-  // Enhanced action handlers (from useTaskActions)
-  const handleTaskEdit = useCallback((task: Task) => {
-    if (!validateTaskTitle(task.title)) {
+  // Enhanced action handlers
+  const handleTaskEdit = useCallback(async (task: Task) => {
+    if (!task.title?.trim()) {
       toast.error('Task title is required');
       return;
     }
-    updateTask(task.id, task);
+    await updateTask(task.id, task);
   }, [updateTask]);
 
-  const handleTaskDelete = useCallback((taskId: string) => {
-    deleteTask(taskId);
-    toast.success('Task deleted successfully');
+  const handleTaskDelete = useCallback(async (taskId: string) => {
+    await deleteTask(taskId);
   }, [deleteTask]);
 
   const handleSubTaskAdd = useCallback((parentId: string) => {
-    // This will trigger the form to open with parentId
-    console.log('Adding subtask to parent:', parentId);
+    setState(prev => ({ ...prev, addingSubTaskParent: parentId }));
   }, []);
 
-  const handleTaskMove = useCallback((taskId: string, newColumnId: string) => {
-    // Handle task movement between different templates
+  const handleTaskMove = useCallback(async (taskId: string, newColumnId: string) => {
     if (['urgent-important', 'not-urgent-important', 'urgent-unimportant', 'not-urgent-unimportant'].includes(newColumnId)) {
-      updateTask(taskId, { quadrant: newColumnId });
+      await updateTask(taskId, { quadrant: newColumnId });
     } else if (['todo', 'in-progress', 'completed'].includes(newColumnId)) {
-      updateTask(taskId, { kanbanColumn: newColumnId });
+      await updateTask(taskId, { kanbanColumn: newColumnId });
     }
   }, [updateTask]);
 
-  const handleTaskComplete = useCallback((taskId: string) => {
-    const task = state.tasks.find(t => t.id === taskId);
-    if (task) {
-      const updates: Partial<Task> = { completed: !task.completed };
-      
-      // Store/restore original column for Kanban
-      if (!task.completed) {
-        updates.originalKanbanColumn = task.originalKanbanColumn || task.kanbanColumn || 'todo';
-      }
-      
-      updateTask(taskId, updates);
-    }
-  }, [state.tasks, updateTask]);
+  const handleTaskComplete = useCallback(async (taskId: string) => {
+    await toggleTaskComplete(taskId);
+  }, [toggleTaskComplete]);
 
   // State management functions
   const setSelectedTask = useCallback((task: Task | null) => {
@@ -273,55 +259,23 @@ export const useUnifiedTaskManager = () => {
     setState(prev => ({ ...prev, addingSubTaskParent: parentId }));
   }, []);
 
-  // Comment management
-  const addComment = useCallback((taskId: string, text: string, color: string) => {
-    const newComment: Comment = {
-      id: Date.now().toString(),
-      text,
-      color,
-      createdAt: new Date(),
-      taskId
-    };
-    setComments(prev => [...prev, newComment]);
-  }, []);
+  // Comment and attachment management (simplified)
+  const addCommentToTask = useCallback(async (taskId: string, text: string, color: string) => {
+    await addComment({ task_id: taskId, text, color });
+  }, [addComment]);
 
-  const editComment = useCallback((commentId: string, text: string) => {
-    setComments(prev => prev.map(comment => 
-      comment.id === commentId ? { ...comment, text } : comment
-    ));
-  }, []);
-
-  const deleteComment = useCallback((commentId: string) => {
-    setComments(prev => prev.filter(comment => comment.id !== commentId));
-  }, []);
-
-  const changeCommentColor = useCallback((commentId: string, color: string) => {
-    setComments(prev => prev.map(comment => 
-      comment.id === commentId ? { ...comment, color } : comment
-    ));
-  }, []);
-
-  // Link management
-  const editTaskLink = useCallback((linkId: string, url: string, text: string) => {
-    setTaskLinks(prev => prev.map(link => 
-      link.id === linkId ? { ...link, url, text } : link
-    ));
-  }, []);
-
-  const deleteTaskLink = useCallback((linkId: string) => {
-    setTaskLinks(prev => prev.filter(link => link.id !== linkId));
-  }, []);
-
-  const changeTaskLinkColor = useCallback((linkId: string, color: string) => {
-    setTaskLinks(prev => prev.map(link => 
-      link.id === linkId ? { ...link, color } : link
-    ));
-  }, []);
+  const addAttachmentToTask = useCallback(async (taskId: string, fileName: string, fileUrl: string) => {
+    await addAttachment({
+      task_id: taskId,
+      file_name: fileName,
+      file_url: fileUrl
+    });
+  }, [addAttachment]);
 
   // Actions object for compatibility
   const actions: TaskActions = {
-    addTask,
-    addSubTask,
+    addTask: addTask as any,
+    addSubTask: addSubTask as any,
     updateTask,
     deleteTask,
     toggleTaskComplete,
@@ -334,7 +288,7 @@ export const useUnifiedTaskManager = () => {
 
   return {
     // Core state
-    tasks: state.tasks,
+    tasks,
     selectedTask: state.selectedTask,
     showAddTask: state.showAddTask,
     editingTask: state.editingTask,
@@ -357,15 +311,15 @@ export const useUnifiedTaskManager = () => {
     expandParentTasks,
     deleteTasksByMissionIds,
     
-    // Enhanced handlers (useTaskActions compatibility)
+    // Enhanced handlers
     handleTaskEdit,
     handleTaskDelete,
     handleSubTaskAdd,
     handleTaskMove,
     handleTaskComplete,
     
-    // Legacy compatibility (useTaskManager)
-    addTaskLegacy, // Legacy method with different signature
+    // Legacy compatibility
+    addTaskLegacy,
     updateTaskDescription,
     
     // State management
@@ -373,17 +327,17 @@ export const useUnifiedTaskManager = () => {
     setEditingTask,
     setAddingSubTaskParent,
     
-    // Comment management
-    comments,
-    addComment,
-    editComment,
-    deleteComment,
-    changeCommentColor,
+    // Simplified comment/attachment management
+    comments: [],
+    addComment: addCommentToTask,
+    editComment: () => {},
+    deleteComment: () => {},
+    changeCommentColor: () => {},
     
-    // Link management
-    taskLinks,
-    editTaskLink,
-    deleteTaskLink,
-    changeTaskLinkColor
+    // Simplified link management
+    taskLinks: [],
+    editTaskLink: () => {},
+    deleteTaskLink: () => {},
+    changeTaskLinkColor: () => {}
   };
 };

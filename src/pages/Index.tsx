@@ -337,7 +337,7 @@ const Index = () => {
           workspaces={workspaces}
           addWorkspace={addWorkspace}
           updateWorkspace={updateWorkspace}
-          deleteWorkspace={(id) => deleteWorkspace(id, handleDeleteWorkspace)}
+          deleteWorkspace={handleDeleteWorkspace}
           selectWorkspace={selectWorkspace}
           addMission={addMission}
           addHabit={addHabit}
