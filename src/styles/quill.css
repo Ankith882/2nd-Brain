@@ -1,0 +1,337 @@
+/* Quill Editor Theme Customization */
+.ql-toolbar {
+  border: none !important;
+  background: transparent !important;
+}
+
+.ql-container {
+  border: none !important;
+  background: transparent !important;
+}
+
+/* Universal Quill Toolbar Button Styles - Ensures visibility in all themes */
+.ql-toolbar button {
+  display: inline-block !important;
+  width: 28px !important;
+  height: 28px !important;
+  padding: 6px !important;
+  margin: 0 2px !important;
+  border: 1px solid transparent !important;
+  border-radius: 4px !important;
+  cursor: pointer !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  transition: all 0.2s ease !important;
+}
+
+.ql-toolbar .ql-formats {
+  margin-right: 15px !important;
+}
+
+/* Dark Mode Styles */
+.dark .ql-editor {
+  color: hsl(var(--primary-foreground)) !important;
+  padding: 1rem !important;
+}
+
+.dark .ql-editor::before {
+  color: hsl(var(--primary-foreground) / 0.6) !important;
+  font-style: italic !important;
+}
+
+.dark .ql-toolbar button {
+  color: hsl(var(--primary-foreground)) !important;
+  background: transparent !important;
+  border-color: hsl(var(--border) / 0.3) !important;
+}
+
+.dark .ql-toolbar button:hover {
+  background: hsl(var(--accent) / 0.3) !important;
+  border-color: hsl(var(--border)) !important;
+}
+
+.dark .ql-toolbar button.ql-active {
+  background: hsl(var(--accent) / 0.5) !important;
+  border-color: hsl(var(--border)) !important;
+}
+
+.dark .ql-snow .ql-picker {
+  color: hsl(var(--primary-foreground)) !important;
+}
+
+.dark .ql-snow .ql-picker-label {
+  color: hsl(var(--primary-foreground)) !important;
+  border: 1px solid hsl(var(--border) / 0.3) !important;
+  border-radius: 4px !important;
+  padding: 6px !important;
+}
+
+.dark .ql-snow .ql-picker-label:hover {
+  background: hsl(var(--accent) / 0.3) !important;
+  border-color: hsl(var(--border)) !important;
+}
+
+.dark .ql-snow .ql-picker-options {
+  background: hsl(var(--card) / 0.8) !important;
+  backdrop-filter: blur(10px) !important;
+  border: 1px solid hsl(var(--border)) !important;
+}
+
+.dark .ql-snow .ql-picker-item {
+  color: hsl(var(--primary-foreground)) !important;
+}
+
+.dark .ql-snow .ql-stroke {
+  stroke: hsl(var(--primary-foreground)) !important;
+}
+
+.dark .ql-snow .ql-fill {
+  fill: hsl(var(--primary-foreground)) !important;
+}
+
+.dark .ql-snow .ql-tooltip {
+  background: hsl(var(--card) / 0.8) !important;
+  backdrop-filter: blur(10px) !important;
+  border: 1px solid hsl(var(--border)) !important;
+  color: hsl(var(--primary-foreground)) !important;
+}
+
+.dark .ql-snow .ql-tooltip input {
+  background: hsl(var(--card) / 0.3) !important;
+  color: hsl(var(--primary-foreground)) !important;
+  border: 1px solid hsl(var(--border)) !important;
+}
+
+/* Light Mode Styles */
+.ql-editor {
+  color: hsl(var(--charcoal)) !important;
+  padding: 1rem !important;
+}
+
+.ql-editor::before {
+  color: hsl(var(--charcoal) / 0.6) !important;
+  font-style: italic !important;
+}
+
+.ql-toolbar button {
+  color: hsl(var(--charcoal)) !important;
+  background: transparent !important;
+  border-color: hsl(var(--border) / 0.3) !important;
+}
+
+.ql-toolbar button:hover {
+  background: hsl(var(--accent)) !important;
+  border-color: hsl(var(--border)) !important;
+}
+
+.ql-toolbar button.ql-active {
+  background: hsl(var(--muted)) !important;
+  border-color: hsl(var(--border)) !important;
+}
+
+.ql-snow .ql-picker {
+  color: hsl(var(--charcoal)) !important;
+}
+
+.ql-snow .ql-picker-label {
+  color: hsl(var(--charcoal)) !important;
+  border: 1px solid hsl(var(--border) / 0.3) !important;
+  border-radius: 4px !important;
+  padding: 6px !important;
+}
+
+.ql-snow .ql-picker-label:hover {
+  background: hsl(var(--accent)) !important;
+  border-color: hsl(var(--border)) !important;
+}
+
+.ql-snow .ql-picker-options {
+  background: hsl(var(--card)) !important;
+  backdrop-filter: blur(10px) !important;
+  border: 1px solid hsl(var(--border)) !important;
+}
+
+.ql-snow .ql-picker-item {
+  color: hsl(var(--charcoal)) !important;
+}
+
+.ql-snow .ql-stroke {
+  stroke: hsl(var(--charcoal)) !important;
+}
+
+.ql-snow .ql-fill {
+  fill: hsl(var(--charcoal)) !important;
+}
+
+.ql-snow .ql-tooltip {
+  background: hsl(var(--card)) !important;
+  backdrop-filter: blur(10px) !important;
+  border: 1px solid hsl(var(--border)) !important;
+  color: hsl(var(--charcoal)) !important;
+}
+
+.ql-snow .ql-tooltip input {
+  background: hsl(var(--card) / 0.8) !important;
+  color: hsl(var(--charcoal)) !important;
+  border: 1px solid hsl(var(--border)) !important;
+}
+
+/* Quill Content Styling for Read Mode */
+.ql-editor, .ql-read-mode {
+  /* Lists */
+  ol, ul {
+    padding-left: 1.5rem;
+  }
+  
+  ol {
+    list-style-type: decimal;
+  }
+  
+  ul {
+    list-style-type: disc;
+  }
+  
+  li {
+    margin-bottom: 0.25rem;
+  }
+  
+  /* Headings */
+  h1 {
+    font-size: 2rem;
+    font-weight: bold;
+    margin-bottom: 1rem;
+  }
+  
+  h2 {
+    font-size: 1.5rem;
+    font-weight: bold;
+    margin-bottom: 0.75rem;
+  }
+  
+  h3 {
+    font-size: 1.25rem;
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+  }
+  
+  /* Text alignment */
+  .ql-align-center {
+    text-align: center;
+  }
+  
+  .ql-align-right {
+    text-align: right;
+  }
+  
+  .ql-align-justify {
+    text-align: justify;
+  }
+  
+  /* Blockquotes */
+  blockquote {
+    border-left: 4px solid hsl(var(--border));
+    padding-left: 1rem;
+    margin: 1rem 0;
+    font-style: italic;
+    color: hsl(var(--muted-foreground));
+  }
+  
+  /* Code blocks */
+  pre {
+    background: hsl(var(--muted));
+    border-radius: 0.25rem;
+    padding: 1rem;
+    overflow-x: auto;
+    font-family: 'Courier New', monospace;
+  }
+  
+  code {
+    background: hsl(var(--muted));
+    padding: 0.25rem;
+    border-radius: 0.25rem;
+    font-family: 'Courier New', monospace;
+    font-size: 0.875rem;
+  }
+  
+  /* Links */
+  a {
+    color: inherit !important;
+    text-decoration: underline;
+  }
+  
+  a:hover {
+    color: hsl(var(--primary) / 0.8);
+  }
+  
+  /* Text formatting */
+  strong {
+    font-weight: bold;
+  }
+  
+  em {
+    font-style: italic;
+  }
+  
+  u {
+    text-decoration: underline;
+  }
+  
+  s {
+    text-decoration: line-through;
+  }
+  
+  /* Subscript and superscript */
+  sub {
+    vertical-align: sub;
+    font-size: smaller;
+  }
+  
+  sup {
+    vertical-align: super;
+    font-size: smaller;
+  }
+  
+  /* Images */
+  img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 0.25rem;
+  }
+  
+  /* Video */
+  iframe {
+    max-width: 100%;
+    border-radius: 0.25rem;
+  }
+  
+  /* Indentation */
+  .ql-indent-1 { padding-left: 3em; }
+  .ql-indent-2 { padding-left: 6em; }
+  .ql-indent-3 { padding-left: 9em; }
+  .ql-indent-4 { padding-left: 12em; }
+  .ql-indent-5 { padding-left: 15em; }
+  .ql-indent-6 { padding-left: 18em; }
+  .ql-indent-7 { padding-left: 21em; }
+  .ql-indent-8 { padding-left: 24em; }
+}
+
+/* Dark mode specific content styles */
+.dark .ql-read-mode {
+  blockquote {
+    border-left-color: hsl(var(--border));
+    color: hsl(var(--muted-foreground));
+  }
+  
+  pre, code {
+    background: hsl(var(--muted));
+    color: hsl(var(--primary-foreground));
+  }
+  
+  a {
+    color: hsl(var(--cyan-mist));
+  }
+  
+  a:hover {
+    color: hsl(var(--cyan-mist-light));
+  }
+}
