@@ -137,7 +137,10 @@ export const useSupabaseQuickNotes = (workspaceId?: string) => {
       const { data, error } = await supabase
         .from('note_folders')
         .insert({
-          ...folder,
+          workspace_id: folder.workspace_id,
+          name: folder.name,
+          color: folder.color,
+          image_url: folder.image_url,
           user_id: user.id
         })
         .select()
@@ -162,7 +165,11 @@ export const useSupabaseQuickNotes = (workspaceId?: string) => {
       const { data, error } = await supabase
         .from('quick_notes')
         .insert({
-          ...note,
+          workspace_id: note.workspace_id,
+          folder_id: note.folder_id,
+          title: note.title,
+          description: note.description,
+          color: note.color,
           user_id: user.id
         })
         .select()
@@ -265,7 +272,11 @@ export const useSupabaseQuickNotes = (workspaceId?: string) => {
       const { data, error } = await supabase
         .from('note_attachments')
         .insert({
-          ...attachment,
+          note_id: attachment.note_id,
+          file_name: attachment.file_name,
+          file_url: attachment.file_url,
+          file_type: attachment.file_type,
+          file_size: attachment.file_size,
           user_id: user.id
         })
         .select()
@@ -290,7 +301,9 @@ export const useSupabaseQuickNotes = (workspaceId?: string) => {
       const { data, error } = await supabase
         .from('note_comments')
         .insert({
-          ...comment,
+          note_id: comment.note_id,
+          text: comment.text,
+          color: comment.color,
           user_id: user.id
         })
         .select()
