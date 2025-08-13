@@ -1,0 +1,25 @@
+-- Enable realtime for all tables
+ALTER TABLE public.workspaces REPLICA IDENTITY FULL;
+ALTER TABLE public.missions REPLICA IDENTITY FULL;
+ALTER TABLE public.tasks REPLICA IDENTITY FULL;
+ALTER TABLE public.habits REPLICA IDENTITY FULL;
+ALTER TABLE public.categories REPLICA IDENTITY FULL;
+ALTER TABLE public.quick_notes REPLICA IDENTITY FULL;
+ALTER TABLE public.note_folders REPLICA IDENTITY FULL;
+ALTER TABLE public.task_attachments REPLICA IDENTITY FULL;
+ALTER TABLE public.task_comments REPLICA IDENTITY FULL;
+ALTER TABLE public.note_attachments REPLICA IDENTITY FULL;
+ALTER TABLE public.note_comments REPLICA IDENTITY FULL;
+
+-- Add tables to realtime publication
+ALTER PUBLICATION supabase_realtime ADD TABLE public.workspaces;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.missions;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.tasks;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.habits;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.categories;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.quick_notes;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.note_folders;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.task_attachments;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.task_comments;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.note_attachments;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.note_comments;
