@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { CalendarTask } from '@/components/calendar/CalendarTemplate';
-import { addDays, endOfWeek, endOfMonth, endOfYear, eachDayOfInterval, isSameDay, startOfWeek, startOfMonth, startOfYear } from 'date-fns';
-
+import { useSupabaseMissions, Mission as SupabaseMission } from './useSupabaseMissions';
+import { useWorkspaceManager } from './useWorkspaceManager';
 
 export interface Mission {
   id: string;
@@ -15,110 +14,113 @@ export interface Mission {
   parentId?: string;
   subMissions: Mission[];
   isExpanded: boolean;
-  
   order: number;
 }
 
-const initialMissions: Mission[] = [];
+const convertSupabaseMissionToMission = (supabaseMission: SupabaseMission): Mission => {
+  return {
+    id: supabaseMission.id,
+    name: supabaseMission.name,
+    color: supabaseMission.color,
+    iconUrl: supabaseMission.image_url || '',
+    template: (supabaseMission.selected_template as any) || 'kanban',
+    workspaceId: supabaseMission.workspace_id,
+    taskCount: 0, // Will be calculated from tasks
+    createdAt: new Date(supabaseMission.created_at),
+    parentId: supabaseMission.parent_id,
+    subMissions: supabaseMission.sub_missions?.map(convertSupabaseMissionToMission) || [],
+    isExpanded: true,
+    order: 0
+  };
+};
 
+const convertMissionToSupabaseMission = (mission: Partial<Mission>, workspaceId: string): Partial<SupabaseMission> => {
+  return {
+    workspace_id: workspaceId,
+    parent_id: mission.parentId,
+    name: mission.name!,
+    color: mission.color!,
+    image_url: mission.iconUrl,
+    selected_template: mission.template || 'kanban',
+    kanban_config: {
+      rows: [],
+      columns: [
+        { id: "todo", title: "To Do" },
+        { id: "in-progress", title: "In Progress" },
+        { id: "completed", title: "Completed" }
+      ]
+    }
+  };
+};
 
 export const useMissionManager = () => {
-  const [missions, setMissions] = useState<Mission[]>(initialMissions);
+  const { selectedWorkspace } = useWorkspaceManager();
+  const workspaceId = typeof selectedWorkspace === 'string' ? selectedWorkspace : selectedWorkspace?.id;
+  
+  const {
+    missions: supabaseMissions,
+    loading,
+    addMission: addSupabaseMission,
+    updateMission: updateSupabaseMission,
+    deleteMission: deleteSupabaseMission
+  } = useSupabaseMissions(workspaceId);
+
   const [selectedMission, setSelectedMission] = useState<Mission | null>(null);
 
-  const addMission = (mission: Omit<Mission, 'id' | 'createdAt' | 'taskCount' | 'subMissions' | 'isExpanded' | 'order'>) => {
-    const newMission: Mission = {
-      id: Date.now().toString(),
-      taskCount: 0,
-      createdAt: new Date(),
-      subMissions: [],
-      isExpanded: true,
-      order: missions.length,
-      ...mission
-    };
-    setMissions(prev => [...prev, newMission]);
-  };
+  const missions = supabaseMissions.map(convertSupabaseMissionToMission);
 
-  const addSubMission = (parentId: string, mission: Omit<Mission, 'id' | 'createdAt' | 'taskCount' | 'subMissions' | 'isExpanded' | 'order' | 'parentId'>) => {
-    const newSubMission: Mission = {
-      id: Date.now().toString(),
-      taskCount: 0,
-      createdAt: new Date(),
-      subMissions: [],
-      isExpanded: true,
-      
-      order: 0,
-      parentId,
-      ...mission
-    };
-
-    setMissions(prev => prev.map(m => {
-      if (m.id === parentId) {
-        return {
-          ...m,
-          subMissions: [...m.subMissions, { ...newSubMission, order: m.subMissions.length }]
-        };
-      }
-      return updateSubMissionInTree(m, parentId, newSubMission);
-    }));
-  };
-
-  const updateSubMissionInTree = (mission: Mission, parentId: string, newSubMission: Mission): Mission => {
-    if (mission.subMissions.some(sub => sub.id === parentId)) {
-      return {
-        ...mission,
-        subMissions: mission.subMissions.map(sub => 
-          sub.id === parentId 
-            ? { ...sub, subMissions: [...sub.subMissions, { ...newSubMission, order: sub.subMissions.length }] }
-            : sub
-        )
-      };
-    }
+  const addMission = async (mission: Omit<Mission, 'id' | 'createdAt' | 'taskCount' | 'subMissions' | 'isExpanded' | 'order'>) => {
+    if (!workspaceId) return;
     
-    return {
-      ...mission,
-      subMissions: mission.subMissions.map(sub => updateSubMissionInTree(sub, parentId, newSubMission))
-    };
+    const supabaseMissionData = convertMissionToSupabaseMission(mission, workspaceId);
+    await addSupabaseMission({
+      workspace_id: workspaceId,
+      parent_id: supabaseMissionData.parent_id,
+      name: supabaseMissionData.name!,
+      color: supabaseMissionData.color!,
+      image_url: supabaseMissionData.image_url,
+      selected_template: supabaseMissionData.selected_template!,
+      kanban_config: supabaseMissionData.kanban_config
+    });
   };
 
-  const updateMission = (id: string, updates: Partial<Mission>) => {
-    setMissions(prev => prev.map(m => {
-      if (m.id === id) {
-        return { ...m, ...updates };
-      }
-      return updateMissionInTree(m, id, updates);
-    }));
+  const addSubMission = async (parentId: string, mission: Omit<Mission, 'id' | 'createdAt' | 'taskCount' | 'subMissions' | 'isExpanded' | 'order' | 'parentId'>) => {
+    if (!workspaceId) return;
+    
+    const supabaseMissionData = convertMissionToSupabaseMission({ ...mission, parentId }, workspaceId);
+    await addSupabaseMission({
+      workspace_id: workspaceId,
+      parent_id: parentId,
+      name: supabaseMissionData.name!,
+      color: supabaseMissionData.color!,
+      image_url: supabaseMissionData.image_url,
+      selected_template: supabaseMissionData.selected_template!,
+      kanban_config: supabaseMissionData.kanban_config
+    });
+  };
+
+  const updateMission = async (id: string, updates: Partial<Mission>) => {
+    const supabaseUpdates: Partial<SupabaseMission> = {};
+    
+    if (updates.name) supabaseUpdates.name = updates.name;
+    if (updates.color) supabaseUpdates.color = updates.color;
+    if (updates.iconUrl !== undefined) supabaseUpdates.image_url = updates.iconUrl;
+    if (updates.template) supabaseUpdates.selected_template = updates.template;
+    
+    await updateSupabaseMission(id, supabaseUpdates);
     
     // Update selectedMission if it's the one being updated
     if (selectedMission?.id === id) {
       setSelectedMission(prev => prev ? { ...prev, ...updates } : null);
-    } else if (selectedMission) {
-      // Check if it's a sub-mission of the selected mission
-      const updatedSelectedMission = updateMissionInTree(selectedMission, id, updates);
-      if (updatedSelectedMission !== selectedMission) {
-        setSelectedMission(updatedSelectedMission);
-      }
     }
-  };
-
-  const updateMissionInTree = (mission: Mission, id: string, updates: Partial<Mission>): Mission => {
-    if (mission.subMissions.some(sub => sub.id === id)) {
-      return {
-        ...mission,
-        subMissions: mission.subMissions.map(sub => 
-          sub.id === id ? { ...sub, ...updates } : sub
-        )
-      };
-    }
-    
-    return {
-      ...mission,
-      subMissions: mission.subMissions.map(sub => updateMissionInTree(sub, id, updates))
-    };
   };
 
   const toggleMissionExpanded = (id: string) => {
-    updateMission(id, { isExpanded: !findMissionById(id)?.isExpanded });
+    // This is just UI state, no need to persist to database
+    const mission = findMissionById(id);
+    if (mission) {
+      updateMission(id, { isExpanded: !mission.isExpanded });
+    }
   };
 
   const findMissionById = (id: string): Mission | null => {
@@ -159,7 +161,7 @@ export const useMissionManager = () => {
     return getAllSubMissionIds(mission);
   };
 
-  const deleteMission = (id: string, onDeleteTasks?: (missionIds: string[]) => void) => {
+  const deleteMission = async (id: string, onDeleteTasks?: (missionIds: string[]) => void) => {
     // Get all mission IDs that will be deleted
     const missionIdsToDelete = getAllMissionIds(id);
     
@@ -168,10 +170,7 @@ export const useMissionManager = () => {
       onDeleteTasks(missionIdsToDelete);
     }
     
-    setMissions(prev => prev.filter(m => m.id !== id).map(m => ({
-      ...m,
-      subMissions: removeMissionFromTree(m.subMissions, id)
-    })));
+    await deleteSupabaseMission(id);
     
     if (selectedMission?.id === id) {
       setSelectedMission(null);
@@ -182,7 +181,8 @@ export const useMissionManager = () => {
     const missionsToDelete = missions.filter(mission => mission.workspaceId === workspaceId);
     const missionIdsToDelete = missionsToDelete.flatMap(mission => getAllMissionIds(mission.id));
     
-    setMissions(prev => prev.filter(mission => mission.workspaceId !== workspaceId));
+    // Delete each mission individually (cascade will handle sub-missions)
+    missionsToDelete.forEach(mission => deleteSupabaseMission(mission.id));
     
     if (selectedMission && missionsToDelete.some(mission => mission.id === selectedMission.id)) {
       setSelectedMission(null);
@@ -191,21 +191,10 @@ export const useMissionManager = () => {
     return missionIdsToDelete;
   };
 
-  const removeMissionFromTree = (missions: Mission[], id: string): Mission[] => {
-    return missions.filter(m => m.id !== id).map(m => ({
-      ...m,
-      subMissions: removeMissionFromTree(m.subMissions, id)
-    }));
-  };
-
-
   const reorderMissions = (workspaceId: string, newOrder: Mission[]) => {
-    setMissions(prev => {
-      const otherMissions = prev.filter(m => m.workspaceId !== workspaceId);
-      return [...otherMissions, ...newOrder];
-    });
+    // For now, this is just UI state - could be enhanced to persist order to database
+    console.log('Reorder missions not yet implemented for Supabase');
   };
-
 
   return {
     missions,
@@ -219,6 +208,7 @@ export const useMissionManager = () => {
     getMissionsByWorkspace,
     deleteMission,
     deleteMissionsByWorkspaceId,
-    reorderMissions
+    reorderMissions,
+    loading
   };
 };

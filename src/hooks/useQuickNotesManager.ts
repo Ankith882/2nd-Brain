@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useSupabaseQuickNotes, QuickNote as SupabaseQuickNote, NoteFolder as SupabaseNoteFolder } from './useSupabaseQuickNotes';
+import { useWorkspaceManager } from './useWorkspaceManager';
 
 export interface QuickNote {
   id: string;
@@ -22,73 +24,106 @@ export interface NotesFolder {
   noteCount: number;
 }
 
+const convertSupabaseNoteFolderToNotesFolder = (supabaseFolder: SupabaseNoteFolder, noteCount: number): NotesFolder => {
+  return {
+    id: supabaseFolder.id,
+    name: supabaseFolder.name,
+    color: supabaseFolder.color,
+    iconUrl: supabaseFolder.image_url || '',
+    workspaceId: supabaseFolder.workspace_id,
+    createdAt: new Date(supabaseFolder.created_at),
+    noteCount
+  };
+};
+
+const convertSupabaseQuickNoteToQuickNote = (supabaseNote: SupabaseQuickNote): QuickNote => {
+  return {
+    id: supabaseNote.id,
+    title: supabaseNote.title,
+    content: supabaseNote.description,
+    color: supabaseNote.color,
+    folderId: supabaseNote.folder_id,
+    createdAt: new Date(supabaseNote.created_at),
+    updatedAt: new Date(supabaseNote.updated_at),
+    attachments: [], // TODO: Map from supabase attachments
+    comments: [] // TODO: Map from supabase comments
+  };
+};
+
+const convertNotesFolderToSupabaseNoteFolder = (folder: Partial<NotesFolder>, workspaceId: string): Partial<SupabaseNoteFolder> => {
+  return {
+    workspace_id: workspaceId,
+    name: folder.name!,
+    color: folder.color!,
+    image_url: folder.iconUrl
+  };
+};
+
+const convertQuickNoteToSupabaseQuickNote = (note: Partial<QuickNote>): Partial<SupabaseQuickNote> => {
+  return {
+    workspace_id: note.folderId ? undefined : '', // This will be set by the folder
+    folder_id: note.folderId!,
+    title: note.title!,
+    description: note.content!,
+    color: note.color!
+  };
+};
+
 export const useQuickNotesManager = () => {
-  const [folders, setFolders] = useState<NotesFolder[]>([]);
-  const [notes, setNotes] = useState<QuickNote[]>([]);
+  const { selectedWorkspace } = useWorkspaceManager();
+  const workspaceId = typeof selectedWorkspace === 'string' ? selectedWorkspace : selectedWorkspace?.id;
+  
+  const {
+    folders: supabaseFolders,
+    notes: supabaseNotes,
+    loading,
+    addFolder: addSupabaseFolder,
+    addNote: addSupabaseNote,
+    updateFolder: updateSupabaseFolder,
+    updateNote: updateSupabaseNote,
+    deleteFolder: deleteSupabaseFolder,
+    deleteNote: deleteSupabaseNote
+  } = useSupabaseQuickNotes(workspaceId);
+
   const [selectedFolder, setSelectedFolder] = useState<NotesFolder | null>(null);
 
-  // Load data from localStorage on mount
-  useEffect(() => {
-    const savedFolders = localStorage.getItem('quickNotesFolders');
-    const savedNotes = localStorage.getItem('quickNotes');
+  // Convert supabase data to legacy format
+  const folders = supabaseFolders.map(folder => {
+    const noteCount = supabaseNotes.filter(note => note.folder_id === folder.id).length;
+    return convertSupabaseNoteFolderToNotesFolder(folder, noteCount);
+  });
+
+  const notes = supabaseNotes.map(convertSupabaseQuickNoteToQuickNote);
+
+  const addFolder = async (folderData: Omit<NotesFolder, 'id' | 'createdAt' | 'noteCount'>) => {
+    if (!workspaceId) return null;
     
-    if (savedFolders) {
-      const parsedFolders = JSON.parse(savedFolders).map((folder: any) => ({
-        ...folder,
-        createdAt: new Date(folder.createdAt)
-      }));
-      setFolders(parsedFolders);
-    }
+    const supabaseFolderData = convertNotesFolderToSupabaseNoteFolder(folderData, workspaceId);
+    const result = await addSupabaseFolder({
+      workspace_id: workspaceId,
+      name: supabaseFolderData.name!,
+      color: supabaseFolderData.color!,
+      image_url: supabaseFolderData.image_url
+    });
     
-    if (savedNotes) {
-      const parsedNotes = JSON.parse(savedNotes).map((note: any) => ({
-        ...note,
-        createdAt: new Date(note.createdAt),
-        updatedAt: new Date(note.updatedAt)
-      }));
-      setNotes(parsedNotes);
+    if (result) {
+      return convertSupabaseNoteFolderToNotesFolder(result, 0);
     }
-  }, []);
-
-  // Save to localStorage whenever data changes
-  useEffect(() => {
-    localStorage.setItem('quickNotesFolders', JSON.stringify(folders));
-  }, [folders]);
-
-  useEffect(() => {
-    localStorage.setItem('quickNotes', JSON.stringify(notes));
-  }, [notes]);
-
-  // Update note counts for folders
-  useEffect(() => {
-    setFolders(prevFolders => 
-      prevFolders.map(folder => ({
-        ...folder,
-        noteCount: notes.filter(note => note.folderId === folder.id).length
-      }))
-    );
-  }, [notes]);
-
-  const addFolder = (folderData: Omit<NotesFolder, 'id' | 'createdAt' | 'noteCount'>) => {
-    const newFolder: NotesFolder = {
-      ...folderData,
-      id: Date.now().toString(),
-      createdAt: new Date(),
-      noteCount: 0
-    };
-    setFolders(prev => [...prev, newFolder]);
-    return newFolder;
+    return null;
   };
 
-  const updateFolder = (id: string, updates: Partial<NotesFolder>) => {
-    setFolders(prev => prev.map(folder => 
-      folder.id === id ? { ...folder, ...updates } : folder
-    ));
+  const updateFolder = async (id: string, updates: Partial<NotesFolder>) => {
+    const supabaseUpdates: Partial<SupabaseNoteFolder> = {};
+    
+    if (updates.name) supabaseUpdates.name = updates.name;
+    if (updates.color) supabaseUpdates.color = updates.color;
+    if (updates.iconUrl !== undefined) supabaseUpdates.image_url = updates.iconUrl;
+    
+    await updateSupabaseFolder(id, supabaseUpdates);
   };
 
-  const deleteFolder = (id: string) => {
-    setFolders(prev => prev.filter(folder => folder.id !== id));
-    setNotes(prev => prev.filter(note => note.folderId !== id));
+  const deleteFolder = async (id: string) => {
+    await deleteSupabaseFolder(id);
     if (selectedFolder?.id === id) {
       setSelectedFolder(null);
     }
@@ -96,35 +131,47 @@ export const useQuickNotesManager = () => {
 
   const deleteFoldersByWorkspaceId = (workspaceId: string) => {
     const foldersToDelete = folders.filter(folder => folder.workspaceId === workspaceId);
-    const folderIdsToDelete = foldersToDelete.map(folder => folder.id);
     
-    setFolders(prev => prev.filter(folder => folder.workspaceId !== workspaceId));
-    setNotes(prev => prev.filter(note => !folderIdsToDelete.includes(note.folderId)));
+    foldersToDelete.forEach(folder => deleteSupabaseFolder(folder.id));
     
     if (selectedFolder && foldersToDelete.some(folder => folder.id === selectedFolder.id)) {
       setSelectedFolder(null);
     }
   };
 
-  const addNote = (noteData: Omit<QuickNote, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const newNote: QuickNote = {
-      ...noteData,
-      id: Date.now().toString(),
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
-    setNotes(prev => [...prev, newNote]);
-    return newNote;
+  const addNote = async (noteData: Omit<QuickNote, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const supabaseNoteData = convertQuickNoteToSupabaseQuickNote(noteData);
+    // Set workspace_id from the folder's workspace
+    const folder = folders.find(f => f.id === noteData.folderId);
+    if (folder) {
+      const result = await addSupabaseNote({
+        workspace_id: folder.workspaceId,
+        folder_id: supabaseNoteData.folder_id!,
+        title: supabaseNoteData.title!,
+        description: supabaseNoteData.description!,
+        color: supabaseNoteData.color!
+      });
+      
+      if (result) {
+        return convertSupabaseQuickNoteToQuickNote(result);
+      }
+    }
+    return null;
   };
 
-  const updateNote = (id: string, updates: Partial<QuickNote>) => {
-    setNotes(prev => prev.map(note => 
-      note.id === id ? { ...note, ...updates, updatedAt: new Date() } : note
-    ));
+  const updateNote = async (id: string, updates: Partial<QuickNote>) => {
+    const supabaseUpdates: Partial<SupabaseQuickNote> = {};
+    
+    if (updates.title) supabaseUpdates.title = updates.title;
+    if (updates.content) supabaseUpdates.description = updates.content;
+    if (updates.color) supabaseUpdates.color = updates.color;
+    if (updates.folderId) supabaseUpdates.folder_id = updates.folderId;
+    
+    await updateSupabaseNote(id, supabaseUpdates);
   };
 
-  const deleteNote = (id: string) => {
-    setNotes(prev => prev.filter(note => note.id !== id));
+  const deleteNote = async (id: string) => {
+    await deleteSupabaseNote(id);
   };
 
   const getFoldersByWorkspace = (workspaceId: string) => {
@@ -148,6 +195,7 @@ export const useQuickNotesManager = () => {
     updateNote,
     deleteNote,
     getFoldersByWorkspace,
-    getNotesByFolder
+    getNotesByFolder,
+    loading
   };
 };

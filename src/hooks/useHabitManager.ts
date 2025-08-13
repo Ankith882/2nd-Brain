@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useSupabaseHabits, Habit as SupabaseHabit } from './useSupabaseHabits';
+import { useWorkspaceManager } from './useWorkspaceManager';
 
 export interface Habit {
   id: string;
@@ -21,110 +22,139 @@ export interface HabitEntry {
   note?: string;
 }
 
+const convertSupabaseHabitToHabit = (supabaseHabit: SupabaseHabit): Habit => {
+  // Extract completed and missed days from date_status_map
+  const completedDays: string[] = [];
+  const missedDays: string[] = [];
+  
+  Object.entries(supabaseHabit.date_status_map || {}).forEach(([date, status]) => {
+    if (status === 'completed') completedDays.push(date);
+    if (status === 'missed') missedDays.push(date);
+  });
+
+  return {
+    id: supabaseHabit.id,
+    name: supabaseHabit.name,
+    color: supabaseHabit.color,
+    iconUrl: supabaseHabit.icon_url,
+    startDate: new Date(supabaseHabit.start_date),
+    workspaceId: supabaseHabit.workspace_id,
+    isCompleted: supabaseHabit.status === 'completed',
+    completedAt: supabaseHabit.end_date ? new Date(supabaseHabit.end_date) : undefined,
+    completedDays,
+    missedDays,
+    notes: supabaseHabit.notes || {},
+    createdAt: new Date(supabaseHabit.created_at)
+  };
+};
+
+const convertHabitToSupabaseHabit = (habit: Partial<Habit>, workspaceId: string): Partial<SupabaseHabit> => {
+  // Build date_status_map from completedDays and missedDays
+  const dateStatusMap: Record<string, 'completed' | 'missed' | 'unmarked'> = {};
+  
+  habit.completedDays?.forEach(date => {
+    dateStatusMap[date] = 'completed';
+  });
+  
+  habit.missedDays?.forEach(date => {
+    dateStatusMap[date] = 'missed';
+  });
+
+  return {
+    workspace_id: workspaceId,
+    name: habit.name!,
+    color: habit.color!,
+    status: habit.isCompleted ? 'completed' : 'active',
+    start_date: habit.startDate?.toISOString().split('T')[0]!,
+    end_date: habit.completedAt?.toISOString().split('T')[0],
+    icon_url: habit.iconUrl,
+    complete_count: habit.completedDays?.length || 0,
+    missed_count: habit.missedDays?.length || 0,
+    date_status_map: dateStatusMap,
+    notes: habit.notes || {}
+  };
+};
+
 export const useHabitManager = () => {
-  const [habits, setHabits] = useState<Habit[]>([]);
+  const { selectedWorkspace } = useWorkspaceManager();
+  const workspaceId = typeof selectedWorkspace === 'string' ? selectedWorkspace : selectedWorkspace?.id;
+  
+  const {
+    habits: supabaseHabits,
+    loading,
+    addHabit: addSupabaseHabit,
+    updateHabit: updateSupabaseHabit,
+    deleteHabit: deleteSupabaseHabit,
+    markHabitForDate,
+    addNoteForDate
+  } = useSupabaseHabits(workspaceId);
 
-  // Load habits from localStorage on mount
-  useEffect(() => {
-    const savedHabits = localStorage.getItem('habits');
-    if (savedHabits) {
-      try {
-        const parsedHabits = JSON.parse(savedHabits).map((habit: any) => ({
-          ...habit,
-          startDate: new Date(habit.startDate),
-          completedAt: habit.completedAt ? new Date(habit.completedAt) : undefined,
-          createdAt: new Date(habit.createdAt)
-        }));
-        setHabits(parsedHabits);
-      } catch (error) {
-        console.error('Error loading habits:', error);
-      }
-    }
-  }, []);
+  const habits = supabaseHabits.map(convertSupabaseHabitToHabit);
 
-  // Save habits to localStorage whenever habits change
-  useEffect(() => {
-    localStorage.setItem('habits', JSON.stringify(habits));
-  }, [habits]);
-
-  const addHabit = (habitData: Omit<Habit, 'id' | 'isCompleted' | 'completedDays' | 'missedDays' | 'notes' | 'createdAt'>) => {
-    const newHabit: Habit = {
+  const addHabit = async (habitData: Omit<Habit, 'id' | 'isCompleted' | 'completedDays' | 'missedDays' | 'notes' | 'createdAt'>) => {
+    if (!workspaceId) return null;
+    
+    const supabaseHabitData = convertHabitToSupabaseHabit({
       ...habitData,
-      id: Date.now().toString(),
       isCompleted: false,
       completedDays: [],
       missedDays: [],
-      notes: {},
-      createdAt: new Date()
-    };
-    setHabits(prev => [...prev, newHabit]);
-    return newHabit;
+      notes: {}
+    }, workspaceId);
+    
+    const result = await addSupabaseHabit({
+      workspace_id: workspaceId,
+      name: supabaseHabitData.name!,
+      color: supabaseHabitData.color!,
+      status: supabaseHabitData.status!,
+      start_date: supabaseHabitData.start_date!,
+      end_date: supabaseHabitData.end_date,
+      icon_url: supabaseHabitData.icon_url,
+      complete_count: supabaseHabitData.complete_count!,
+      missed_count: supabaseHabitData.missed_count!,
+      date_status_map: supabaseHabitData.date_status_map!,
+      notes: supabaseHabitData.notes!
+    });
+    return result ? convertSupabaseHabitToHabit(result as SupabaseHabit) : null;
   };
 
-  const updateHabit = (id: string, updates: Partial<Habit>) => {
-    setHabits(prev => prev.map(habit => 
-      habit.id === id ? { ...habit, ...updates } : habit
-    ));
+  const updateHabit = async (id: string, updates: Partial<Habit>) => {
+    const supabaseUpdates: Partial<SupabaseHabit> = {};
+    
+    if (updates.name) supabaseUpdates.name = updates.name;
+    if (updates.color) supabaseUpdates.color = updates.color;
+    if (updates.iconUrl !== undefined) supabaseUpdates.icon_url = updates.iconUrl;
+    if (updates.isCompleted !== undefined) supabaseUpdates.status = updates.isCompleted ? 'completed' : 'active';
+    if (updates.startDate) supabaseUpdates.start_date = updates.startDate.toISOString().split('T')[0];
+    if (updates.completedAt) supabaseUpdates.end_date = updates.completedAt.toISOString().split('T')[0];
+    
+    await updateSupabaseHabit(id, supabaseUpdates);
   };
 
-  const deleteHabit = (id: string) => {
-    setHabits(prev => prev.filter(habit => habit.id !== id));
+  const deleteHabit = async (id: string) => {
+    await deleteSupabaseHabit(id);
   };
 
   const deleteHabitsByWorkspaceId = (workspaceId: string) => {
-    setHabits(prev => prev.filter(habit => habit.workspaceId !== workspaceId));
+    const habitsToDelete = habits.filter(habit => habit.workspaceId === workspaceId);
+    habitsToDelete.forEach(habit => deleteSupabaseHabit(habit.id));
   };
 
-  const markHabitCompleted = (id: string) => {
-    setHabits(prev => prev.map(habit => 
-      habit.id === id 
-        ? { ...habit, isCompleted: true, completedAt: new Date() }
-        : habit
-    ));
+  const markHabitCompleted = async (id: string) => {
+    await updateHabit(id, { isCompleted: true, completedAt: new Date() });
   };
 
-  const markHabitIncomplete = (id: string) => {
-    setHabits(prev => prev.map(habit => 
-      habit.id === id 
-        ? { ...habit, isCompleted: false, completedAt: undefined }
-        : habit
-    ));
+  const markHabitIncomplete = async (id: string) => {
+    await updateHabit(id, { isCompleted: false, completedAt: undefined });
   };
 
-  const updateHabitDay = (habitId: string, date: string, status: 'completed' | 'missed' | null) => {
-    setHabits(prev => prev.map(habit => {
-      if (habit.id !== habitId) return habit;
-
-      const updatedHabit = { ...habit };
-      
-      // Remove date from both arrays first
-      updatedHabit.completedDays = habit.completedDays.filter(d => d !== date);
-      updatedHabit.missedDays = habit.missedDays.filter(d => d !== date);
-
-      // Add to appropriate array based on status
-      if (status === 'completed') {
-        updatedHabit.completedDays.push(date);
-      } else if (status === 'missed') {
-        updatedHabit.missedDays.push(date);
-      }
-
-      return updatedHabit;
-    }));
+  const updateHabitDay = async (habitId: string, date: string, status: 'completed' | 'missed' | null) => {
+    const supabaseStatus = status === null ? 'unmarked' : status;
+    await markHabitForDate(habitId, date, supabaseStatus);
   };
 
-  const addHabitNote = (habitId: string, date: string, note: string) => {
-    setHabits(prev => prev.map(habit => {
-      if (habit.id !== habitId) return habit;
-      
-      const updatedNotes = { ...habit.notes };
-      if (note.trim()) {
-        updatedNotes[date] = note.trim();
-      } else {
-        delete updatedNotes[date];
-      }
-      
-      return { ...habit, notes: updatedNotes };
-    }));
+  const addHabitNote = async (habitId: string, date: string, note: string) => {
+    await addNoteForDate(habitId, date, note);
   };
 
   const getHabitsByWorkspace = (workspaceId: string) => {
@@ -174,6 +204,7 @@ export const useHabitManager = () => {
     getActiveHabitsByWorkspace,
     getCompletedHabitsByWorkspace,
     getHabitDayStatus,
-    getMonthStats
+    getMonthStats,
+    loading
   };
 };
