@@ -54,7 +54,10 @@ export const useSupabaseWorkspaces = () => {
       const { data, error } = await supabase
         .from('workspaces')
         .insert({
-          ...workspace,
+          name: workspace.name,
+          color: workspace.color,
+          image_url: workspace.image_url,
+          is_selected: workspace.is_selected,
           user_id: user.id
         })
         .select()

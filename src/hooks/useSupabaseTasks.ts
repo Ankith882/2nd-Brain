@@ -146,7 +146,23 @@ export const useSupabaseTasks = (workspaceId?: string, missionId?: string) => {
       const { data, error } = await supabase
         .from('tasks')
         .insert({
-          ...task,
+          workspace_id: task.workspace_id,
+          mission_id: task.mission_id,
+          parent_id: task.parent_id,
+          category_id: task.category_id,
+          title: task.title,
+          description: task.description,
+          color: task.color,
+          priority: task.priority,
+          start_time: task.start_time,
+          end_time: task.end_time,
+          scheduled_date: task.scheduled_date,
+          completed: task.completed,
+          kanban_column: task.kanban_column,
+          kanban_row: task.kanban_row,
+          matrix_quadrant: task.matrix_quadrant,
+          task_order: task.task_order,
+          is_expanded: task.is_expanded,
           user_id: user.id
         })
         .select()

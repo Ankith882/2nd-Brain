@@ -56,7 +56,17 @@ export const useSupabaseHabits = (workspaceId?: string) => {
       const { data, error } = await supabase
         .from('habits')
         .insert({
-          ...habit,
+          workspace_id: habit.workspace_id,
+          name: habit.name,
+          color: habit.color,
+          status: habit.status,
+          start_date: habit.start_date,
+          end_date: habit.end_date,
+          icon_url: habit.icon_url,
+          complete_count: habit.complete_count,
+          missed_count: habit.missed_count,
+          date_status_map: habit.date_status_map,
+          notes: habit.notes,
           user_id: user.id
         })
         .select()

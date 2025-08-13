@@ -72,7 +72,11 @@ export const useSupabaseCategories = (workspaceId?: string) => {
       const { data, error } = await supabase
         .from('categories')
         .insert({
-          ...category,
+          workspace_id: category.workspace_id,
+          parent_id: category.parent_id,
+          title: category.title,
+          color: category.color,
+          description: category.description,
           user_id: user.id
         })
         .select()
