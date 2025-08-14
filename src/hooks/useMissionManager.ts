@@ -55,7 +55,7 @@ const convertMissionToSupabaseMission = (mission: Partial<Mission>, workspaceId:
 
 export const useMissionManager = () => {
   const { selectedWorkspace } = useWorkspaceManager();
-  const workspaceId = typeof selectedWorkspace === 'string' ? selectedWorkspace : selectedWorkspace?.id;
+  const workspaceId = selectedWorkspace;
   
   const {
     missions: supabaseMissions,

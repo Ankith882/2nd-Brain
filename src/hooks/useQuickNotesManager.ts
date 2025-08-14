@@ -71,7 +71,7 @@ const convertQuickNoteToSupabaseQuickNote = (note: Partial<QuickNote>): Partial<
 
 export const useQuickNotesManager = () => {
   const { selectedWorkspace } = useWorkspaceManager();
-  const workspaceId = typeof selectedWorkspace === 'string' ? selectedWorkspace : selectedWorkspace?.id;
+  const workspaceId = selectedWorkspace;
   
   const {
     folders: supabaseFolders,

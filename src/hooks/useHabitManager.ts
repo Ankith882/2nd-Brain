@@ -77,7 +77,7 @@ const convertHabitToSupabaseHabit = (habit: Partial<Habit>, workspaceId: string)
 
 export const useHabitManager = () => {
   const { selectedWorkspace } = useWorkspaceManager();
-  const workspaceId = typeof selectedWorkspace === 'string' ? selectedWorkspace : selectedWorkspace?.id;
+  const workspaceId = selectedWorkspace;
   
   const {
     habits: supabaseHabits,
