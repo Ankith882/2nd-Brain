@@ -1,82 +1,66 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
+import { useSupabaseCategories, Category, SupabaseCategory } from './useSupabaseCategories';
+import { useSupabaseWorkspaces } from './useSupabaseWorkspaces';
 
-export interface Category {
-  id: string;
-  title: string;
-  description?: string;
-  color: string;
-  createdAt: Date;
-  parentId?: string;
-  subCategories: Category[];
-  isExpanded: boolean;
-  order: number;
-}
+export type { Category } from './useSupabaseCategories';
 
-const initialCategories: Category[] = [];
+// Convert SupabaseCategory to legacy Category format
+const convertSupabaseCategoryToLegacy = (supabaseCategory: SupabaseCategory): Category => {
+  return {
+    id: supabaseCategory.id,
+    title: supabaseCategory.title,
+    description: supabaseCategory.description,
+    color: supabaseCategory.color,
+    createdAt: new Date(supabaseCategory.created_at),
+    parentId: supabaseCategory.parent_id,
+    subCategories: supabaseCategory.sub_categories?.map(convertSupabaseCategoryToLegacy) || [],
+    isExpanded: true,
+    order: 0
+  };
+};
 
 export const useCategoryManager = () => {
-  const [categories, setCategories] = useState<Category[]>(() => {
-    const stored = localStorage.getItem('task-categories');
-    return stored ? JSON.parse(stored).map((cat: any) => ({
-      ...cat,
-      createdAt: new Date(cat.createdAt),
-      subCategories: cat.subCategories || [],
-      isExpanded: cat.isExpanded ?? true,
-      order: cat.order ?? 0
-    })) : initialCategories;
-  });
+  const { selectedWorkspace } = useSupabaseWorkspaces();
+  const workspaceId = selectedWorkspace?.id;
+  
+  const {
+    categories: supabaseCategories,
+    addCategory: addSupabaseCategory,
+    updateCategory: updateSupabaseCategory,
+    deleteCategory: deleteSupabaseCategory
+  } = useSupabaseCategories(workspaceId);
 
-  // Save to localStorage whenever categories change
-  useEffect(() => {
-    localStorage.setItem('task-categories', JSON.stringify(categories));
-  }, [categories]);
+  // Convert Supabase categories to legacy format
+  const categories = supabaseCategories.map(convertSupabaseCategoryToLegacy);
 
-  const addCategory = (categoryData: Omit<Category, 'id' | 'createdAt' | 'subCategories' | 'isExpanded' | 'order'>) => {
-    const newCategory: Category = {
-      id: Date.now().toString(),
-      createdAt: new Date(),
-      subCategories: [],
-      isExpanded: true,
-      order: categories.length,
-      ...categoryData
+  const addCategory = useCallback(async (categoryData: Omit<Category, 'id' | 'createdAt' | 'subCategories' | 'isExpanded' | 'order'>) => {
+    if (!workspaceId) return;
+
+    const supabaseCategoryData: Omit<SupabaseCategory, 'id' | 'user_id' | 'created_at' | 'updated_at' | 'sub_categories'> = {
+      workspace_id: workspaceId,
+      title: categoryData.title,
+      description: categoryData.description,
+      color: categoryData.color,
+      parent_id: categoryData.parentId
     };
 
-    if (categoryData.parentId) {
-      const addSubCategoryRecursively = (categoryList: Category[], parentId: string): Category[] => {
-        return categoryList.map(category => {
-          if (category.id === parentId) {
-            return { ...category, subCategories: [...category.subCategories, newCategory] };
-          }
-          return { ...category, subCategories: addSubCategoryRecursively(category.subCategories, parentId) };
-        });
-      };
-      setCategories(prev => addSubCategoryRecursively(prev, categoryData.parentId!));
-    } else {
-      setCategories(prev => [...prev, newCategory]);
-    }
-  };
+    await addSupabaseCategory(supabaseCategoryData);
+  }, [workspaceId, addSupabaseCategory]);
 
-  const updateCategory = (id: string, updates: Partial<Category>) => {
-    const updateCategoryRecursively = (categoryList: Category[]): Category[] => {
-      return categoryList.map(category => {
-        if (category.id === id) {
-          return { ...category, ...updates };
-        }
-        return { ...category, subCategories: updateCategoryRecursively(category.subCategories) };
-      });
+  const updateCategory = useCallback(async (id: string, updates: Partial<Category>) => {
+    const supabaseUpdates: Partial<SupabaseCategory> = {
+      title: updates.title,
+      description: updates.description,
+      color: updates.color,
+      parent_id: updates.parentId
     };
-    setCategories(prev => updateCategoryRecursively(prev));
-  };
 
-  const deleteCategory = (id: string) => {
-    const deleteCategoryRecursively = (categoryList: Category[]): Category[] => {
-      return categoryList.filter(category => category.id !== id).map(category => ({
-        ...category,
-        subCategories: deleteCategoryRecursively(category.subCategories)
-      }));
-    };
-    setCategories(prev => deleteCategoryRecursively(prev));
-  };
+    await updateSupabaseCategory(id, supabaseUpdates);
+  }, [updateSupabaseCategory]);
+
+  const deleteCategory = useCallback(async (id: string) => {
+    await deleteSupabaseCategory(id);
+  }, [deleteSupabaseCategory]);
 
   const getCategoryById = useCallback((id: string): Category | null => {
     const findCategoryRecursively = (categoryList: Category[]): Category | null => {
@@ -90,17 +74,10 @@ export const useCategoryManager = () => {
     return findCategoryRecursively(categories);
   }, [categories]);
 
-  const toggleCategoryExpanded = (id: string) => {
-    const toggleRecursively = (categoryList: Category[]): Category[] => {
-      return categoryList.map(category => {
-        if (category.id === id) {
-          return { ...category, isExpanded: !category.isExpanded };
-        }
-        return { ...category, subCategories: toggleRecursively(category.subCategories) };
-      });
-    };
-    setCategories(prev => toggleRecursively(prev));
-  };
+  const toggleCategoryExpanded = useCallback(() => {
+    // This is handled in the UI state, not persisted to database
+    console.log('toggleCategoryExpanded not implemented for Supabase');
+  }, []);
 
   return {
     categories,

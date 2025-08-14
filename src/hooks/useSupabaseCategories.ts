@@ -3,21 +3,48 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 
-export interface Category {
+export interface SupabaseCategory {
   id: string;
   user_id: string;
   workspace_id: string;
-  parent_id?: string;
   title: string;
-  color: string;
   description?: string;
+  color: string;
+  parent_id?: string;
   created_at: string;
   updated_at: string;
-  sub_categories?: Category[];
+  sub_categories?: SupabaseCategory[];
 }
 
+export interface Category {
+  id: string;
+  title: string;
+  description?: string;
+  color: string;
+  createdAt: Date;
+  parentId?: string;
+  subCategories: Category[];
+  isExpanded: boolean;
+  order: number;
+}
+
+// Convert SupabaseCategory to legacy Category format
+const convertSupabaseCategoryToLegacy = (supabaseCategory: SupabaseCategory): Category => {
+  return {
+    id: supabaseCategory.id,
+    title: supabaseCategory.title,
+    description: supabaseCategory.description,
+    color: supabaseCategory.color,
+    createdAt: new Date(supabaseCategory.created_at),
+    parentId: supabaseCategory.parent_id,
+    subCategories: supabaseCategory.sub_categories?.map(convertSupabaseCategoryToLegacy) || [],
+    isExpanded: true,
+    order: 0
+  };
+};
+
 export const useSupabaseCategories = (workspaceId?: string) => {
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [categories, setCategories] = useState<SupabaseCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
 
@@ -31,13 +58,13 @@ export const useSupabaseCategories = (workspaceId?: string) => {
         .select('*')
         .eq('user_id', user.id)
         .eq('workspace_id', workspaceId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: true });
 
       if (error) throw error;
 
       // Build hierarchical structure
-      const categoryMap = new Map<string, Category>();
-      const rootCategories: Category[] = [];
+      const categoryMap = new Map<string, SupabaseCategory>();
+      const rootCategories: SupabaseCategory[] = [];
 
       data?.forEach(category => {
         categoryMap.set(category.id, { ...category, sub_categories: [] });
@@ -65,7 +92,7 @@ export const useSupabaseCategories = (workspaceId?: string) => {
   };
 
   // Add category
-  const addCategory = async (category: Omit<Category, 'id' | 'user_id' | 'created_at' | 'updated_at' | 'sub_categories'>) => {
+  const addCategory = async (category: Omit<SupabaseCategory, 'id' | 'user_id' | 'created_at' | 'updated_at' | 'sub_categories'>) => {
     if (!user) return;
 
     try {
@@ -73,10 +100,10 @@ export const useSupabaseCategories = (workspaceId?: string) => {
         .from('categories')
         .insert({
           workspace_id: category.workspace_id,
-          parent_id: category.parent_id,
           title: category.title,
-          color: category.color,
           description: category.description,
+          color: category.color,
+          parent_id: category.parent_id,
           user_id: user.id
         })
         .select()
@@ -94,7 +121,7 @@ export const useSupabaseCategories = (workspaceId?: string) => {
   };
 
   // Update category
-  const updateCategory = async (id: string, updates: Partial<Category>) => {
+  const updateCategory = async (id: string, updates: Partial<SupabaseCategory>) => {
     try {
       const { data, error } = await supabase
         .from('categories')
@@ -106,7 +133,6 @@ export const useSupabaseCategories = (workspaceId?: string) => {
       if (error) throw error;
 
       await fetchCategories();
-      toast.success('Category updated successfully');
       return data;
     } catch (error) {
       console.error('Error updating category:', error);
@@ -132,13 +158,13 @@ export const useSupabaseCategories = (workspaceId?: string) => {
     }
   };
 
-  // Real-time subscription
+  // Real-time subscriptions
   useEffect(() => {
     if (!user || !workspaceId) return;
 
     fetchCategories();
 
-    const channel = supabase
+    const categoriesChannel = supabase
       .channel('categories-changes')
       .on('postgres_changes', {
         event: '*',
@@ -151,7 +177,7 @@ export const useSupabaseCategories = (workspaceId?: string) => {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(categoriesChannel);
     };
   }, [user, workspaceId]);
 

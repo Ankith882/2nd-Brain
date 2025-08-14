@@ -1,12 +1,34 @@
 import { useState, useCallback } from 'react';
-import { Task, TaskManagerState, TaskActions } from '@/types/task';
-import { useSupabaseTasks, SupabaseTask } from './useSupabaseTasks';
+import { Task, TaskManagerState, TaskActions, TaskAttachment, TaskComment } from '@/types/task';
+import { useSupabaseTasks, SupabaseTask, TaskAttachment as SupabaseTaskAttachment, TaskComment as SupabaseTaskComment } from './useSupabaseTasks';
 import { useSupabaseWorkspaces } from './useSupabaseWorkspaces';
 import { useSupabaseMissions } from './useSupabaseMissions';
 import { toast } from 'sonner';
 
 // Convert SupabaseTask to legacy Task format
-const convertSupabaseTaskToLegacy = (supabaseTask: SupabaseTask): Task => {
+const convertSupabaseTaskToLegacy = (supabaseTask: SupabaseTask, attachments: SupabaseTaskAttachment[] = [], comments: SupabaseTaskComment[] = []): Task => {
+  // Convert attachments to legacy format
+  const taskAttachments: TaskAttachment[] = attachments
+    .filter(att => att.task_id === supabaseTask.id)
+    .map(att => ({
+      id: att.id,
+      url: att.file_url,
+      text: att.file_name,
+      type: att.file_type?.includes('image') ? 'image' : 'file' as 'link' | 'file' | 'image',
+      color: '#3B82F6'
+    }));
+
+  // Convert comments to legacy format
+  const taskComments: TaskComment[] = comments
+    .filter(comment => comment.task_id === supabaseTask.id)
+    .map(comment => ({
+      id: comment.id,
+      text: comment.text,
+      color: comment.color || '#3B82F6',
+      createdAt: new Date(comment.created_at),
+      taskId: comment.task_id
+    }));
+
   return {
     id: supabaseTask.id,
     title: supabaseTask.title,
@@ -20,13 +42,16 @@ const convertSupabaseTaskToLegacy = (supabaseTask: SupabaseTask): Task => {
     missionId: supabaseTask.mission_id,
     startTime: supabaseTask.start_time ? new Date(supabaseTask.start_time) : undefined,
     endTime: supabaseTask.end_time ? new Date(supabaseTask.end_time) : undefined,
-    subTasks: supabaseTask.sub_tasks?.map(convertSupabaseTaskToLegacy) || [],
+    subTasks: supabaseTask.sub_tasks?.map(subTask => convertSupabaseTaskToLegacy(subTask, attachments, comments)) || [],
     isExpanded: supabaseTask.is_expanded,
     order: supabaseTask.task_order,
     kanbanColumn: supabaseTask.kanban_column,
     quadrant: supabaseTask.matrix_quadrant,
+    originalQuadrant: supabaseTask.matrix_quadrant,
+    originalKanbanColumn: supabaseTask.kanban_column,
     parentId: supabaseTask.parent_id,
-    attachments: []
+    attachments: taskAttachments,
+    comments: taskComments
   };
 };
 
@@ -57,6 +82,8 @@ export const useUnifiedTaskManager = () => {
   const { missions } = useSupabaseMissions(selectedWorkspace?.id);
   const {
     tasks: supabaseTasks,
+    attachments: supabaseAttachments,
+    comments: supabaseComments,
     addTask: addSupabaseTask,
     updateTask: updateSupabaseTask,
     deleteTask: deleteSupabaseTask,
@@ -65,7 +92,7 @@ export const useUnifiedTaskManager = () => {
   } = useSupabaseTasks(selectedWorkspace?.id);
 
   // Convert Supabase tasks to legacy format
-  const tasks = supabaseTasks.map(convertSupabaseTaskToLegacy);
+  const tasks = supabaseTasks.map(task => convertSupabaseTaskToLegacy(task, supabaseAttachments, supabaseComments));
 
   // State management
   const [state, setState] = useState<TaskManagerState>({
@@ -259,18 +286,32 @@ export const useUnifiedTaskManager = () => {
     setState(prev => ({ ...prev, addingSubTaskParent: parentId }));
   }, []);
 
-  // Comment and attachment management (simplified)
+  // Comment and attachment management (improved)
   const addCommentToTask = useCallback(async (taskId: string, text: string, color: string) => {
     await addComment({ task_id: taskId, text, color });
   }, [addComment]);
 
-  const addAttachmentToTask = useCallback(async (taskId: string, fileName: string, fileUrl: string) => {
+  const addAttachmentToTask = useCallback(async (taskId: string, fileName: string, fileUrl: string, fileType?: string, fileSize?: number) => {
     await addAttachment({
       task_id: taskId,
       file_name: fileName,
-      file_url: fileUrl
+      file_url: fileUrl,
+      file_type: fileType,
+      file_size: fileSize
     });
   }, [addAttachment]);
+
+  const editComment = useCallback(() => {
+    console.log('editComment not yet implemented for Supabase');
+  }, []);
+
+  const deleteComment = useCallback(() => {
+    console.log('deleteComment not yet implemented for Supabase');
+  }, []);
+
+  const changeCommentColor = useCallback(() => {
+    console.log('changeCommentColor not yet implemented for Supabase');
+  }, []);
 
   // Actions object for compatibility
   const actions: TaskActions = {
@@ -327,12 +368,13 @@ export const useUnifiedTaskManager = () => {
     setEditingTask,
     setAddingSubTaskParent,
     
-    // Simplified comment/attachment management
-    comments: [],
+    // Improved comment/attachment management
+    comments: supabaseComments,
     addComment: addCommentToTask,
-    editComment: () => {},
-    deleteComment: () => {},
-    changeCommentColor: () => {},
+    editComment,
+    deleteComment,
+    changeCommentColor,
+    addAttachmentToTask,
     
     // Simplified link management
     taskLinks: [],

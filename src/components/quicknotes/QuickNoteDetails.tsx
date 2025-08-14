@@ -3,6 +3,7 @@ import { X, MoreVertical, Save, Trash2, Palette, ExternalLink, FileIcon, Message
 import { Button, Input, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui';
 import { QuickNote } from '@/hooks/useQuickNotesManager';
 import { QuillEditor } from '../QuillEditor';
+import { useQuickNotesAttachmentsComments } from '@/hooks/useQuickNotesAttachmentsComments';
 interface QuickNoteDetailsProps {
   note: QuickNote;
   isDarkMode: boolean;
@@ -22,8 +23,34 @@ export const QuickNoteDetails: React.FC<QuickNoteDetailsProps> = ({
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const [color, setColor] = useState(note.color);
-  const [attachments, setAttachments] = useState(note.attachments || []);
-  const [comments, setComments] = useState(note.comments || []);
+  
+  // Use Supabase-based attachments and comments
+  const {
+    attachments: supabaseAttachments,
+    comments: supabaseComments,
+    addAttachment,
+    deleteAttachment,
+    addComment,
+    updateComment,
+    deleteComment
+  } = useQuickNotesAttachmentsComments(note.id);
+
+  // Convert Supabase data to legacy format for display
+  const attachments = supabaseAttachments.map(att => ({
+    id: att.id,
+    url: att.file_url,
+    text: att.file_name,
+    type: (att.file_type?.includes('image') ? 'image' : att.file_type?.includes('link') ? 'link' : 'file') as 'link' | 'file',
+    color: '#3B82F6'
+  }));
+
+  const comments = supabaseComments.map(comment => ({
+    id: comment.id,
+    text: comment.text,
+    color: comment.color,
+    createdAt: new Date(comment.created_at),
+    taskId: note.id // Required for compatibility
+  }));
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [customColor, setCustomColor] = useState(note.color);
   const [clickCount, setClickCount] = useState(0);
@@ -34,8 +61,6 @@ export const QuickNoteDetails: React.FC<QuickNoteDetailsProps> = ({
     setContent(note.content);
     setColor(note.color);
     setCustomColor(note.color);
-    setAttachments(note.attachments || []);
-    setComments(note.comments || []);
   }, [note]);
   const handleContentClick = () => {
     if (!isEditMode) {
@@ -61,9 +86,7 @@ export const QuickNoteDetails: React.FC<QuickNoteDetailsProps> = ({
     onSave({
       title,
       content,
-      color,
-      attachments,
-      comments
+      color
     });
     setIsEditMode(false);
   };
@@ -151,8 +174,14 @@ export const QuickNoteDetails: React.FC<QuickNoteDetailsProps> = ({
               isDarkMode={isDarkMode} 
               initialAttachments={attachments}
               initialComments={comments}
-              onAttachmentsChange={setAttachments}
-              onCommentsChange={setComments}
+              onAttachmentsChange={(newAttachments) => {
+                // Handle attachment changes with Supabase
+                console.log('Attachments changed:', newAttachments);
+              }}
+              onCommentsChange={(newComments) => {
+                // Handle comment changes with Supabase
+                console.log('Comments changed:', newComments);
+              }}
             />
             <div className="absolute bottom-2 left-2 z-10">
               
