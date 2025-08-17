@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, MoreVertical, Save, Trash2, Palette, ExternalLink, FileIcon, MessageCircle, Edit3, Sparkles, Zap } from 'lucide-react';
+import { X, MoreVertical, Save, Trash2, Palette, ExternalLink, FileIcon, MessageCircle, Edit3, Sparkles, Zap, Upload, Plus } from 'lucide-react';
 import { Button, Input, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui';
 import { QuickNote } from '@/hooks/useQuickNotesManager';
 import { QuillEditor } from '../QuillEditor';
 import { useQuickNotesAttachmentsComments } from '@/hooks/useQuickNotesAttachmentsComments';
+import { format } from 'date-fns';
 interface QuickNoteDetailsProps {
   note: QuickNote;
   isDarkMode: boolean;
@@ -23,6 +24,7 @@ export const QuickNoteDetails: React.FC<QuickNoteDetailsProps> = ({
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const [color, setColor] = useState(note.color);
+  const [newComment, setNewComment] = useState('');
   
   // Use Supabase-based attachments and comments
   const {
@@ -33,24 +35,41 @@ export const QuickNoteDetails: React.FC<QuickNoteDetailsProps> = ({
     addComment,
     updateComment,
     deleteComment
-  } = useQuickNotesAttachmentsComments(note.id);
+  } = useQuickNotesAttachmentsComments();
 
-  // Convert Supabase data to legacy format for display
-  const attachments = supabaseAttachments.map(att => ({
+  // Get attachments and comments for this note
+  const noteAttachments = supabaseAttachments.filter(att => att.note_id === note.id);
+  const noteComments = supabaseComments.filter(comment => comment.note_id === note.id);
+
+  // Convert Supabase data to legacy format for QuillEditor compatibility
+  const attachments = noteAttachments.map(att => ({
     id: att.id,
     url: att.file_url,
     text: att.file_name,
-    type: (att.file_type?.includes('image') ? 'image' : att.file_type?.includes('link') ? 'link' : 'file') as 'link' | 'file',
+    type: (att.file_type?.includes('link') ? 'link' : 'file') as 'link' | 'file',
     color: '#3B82F6'
   }));
 
-  const comments = supabaseComments.map(comment => ({
+  const comments = noteComments.map(comment => ({
     id: comment.id,
     text: comment.text,
     color: comment.color,
     createdAt: new Date(comment.created_at),
     taskId: note.id // Required for compatibility
   }));
+
+  const handleFileUpload = async (file: File) => {
+    // Simple file upload without storage bucket for now
+    console.log('File upload:', file.name);
+  };
+
+  const handleAddComment = async (text: string, color: string) => {
+    await addComment({
+      note_id: note.id,
+      text,
+      color
+    });
+  };
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [customColor, setCustomColor] = useState(note.color);
   const [clickCount, setClickCount] = useState(0);

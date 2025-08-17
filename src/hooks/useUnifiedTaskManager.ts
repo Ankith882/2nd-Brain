@@ -3,6 +3,7 @@ import { Task, TaskManagerState, TaskActions, TaskAttachment, TaskComment } from
 import { useSupabaseTasks, SupabaseTask, TaskAttachment as SupabaseTaskAttachment, TaskComment as SupabaseTaskComment } from './useSupabaseTasks';
 import { useSupabaseWorkspaces } from './useSupabaseWorkspaces';
 import { useSupabaseMissions } from './useSupabaseMissions';
+import { useTaskAttachmentsComments } from './useTaskAttachmentsComments';
 import { toast } from 'sonner';
 
 // Convert SupabaseTask to legacy Task format
@@ -64,16 +65,17 @@ const convertLegacyTaskToSupabase = (task: Partial<Task>, workspaceId: string, m
     priority: task.priority || 'P7',
     workspace_id: workspaceId,
     mission_id: missionId,
-    category_id: task.categoryId,
-    scheduled_date: task.date?.toISOString().split('T')[0],
-    start_time: task.startTime?.toISOString(),
-    end_time: task.endTime?.toISOString(),
+    category_id: task.categoryId || null, // Allow null category
+    scheduled_date: task.date?.toISOString().split('T')[0] || null,
+    start_time: task.startTime?.toISOString() || null,
+    end_time: task.endTime?.toISOString() || null,
     completed: task.completed || false,
     kanban_column: task.kanbanColumn || 'todo',
-    matrix_quadrant: task.quadrant,
+    kanban_row: null,
+    matrix_quadrant: task.quadrant || null,
     task_order: task.order || 0,
     is_expanded: task.isExpanded || false,
-    parent_id: task.parentId
+    parent_id: task.parentId || null
   };
 };
 
@@ -86,13 +88,22 @@ export const useUnifiedTaskManager = () => {
     comments: supabaseComments,
     addTask: addSupabaseTask,
     updateTask: updateSupabaseTask,
-    deleteTask: deleteSupabaseTask,
-    addAttachment,
-    addComment
+    deleteTask: deleteSupabaseTask
   } = useSupabaseTasks(selectedWorkspace?.id);
 
+  const {
+    attachments: taskAttachments,
+    comments: taskComments,
+    uploadFile,
+    addAttachment: addTaskAttachment,
+    deleteAttachment: deleteTaskAttachment,
+    addComment: addTaskComment,
+    updateComment: updateTaskComment,
+    deleteComment: deleteTaskComment
+  } = useTaskAttachmentsComments();
+
   // Convert Supabase tasks to legacy format
-  const tasks = supabaseTasks.map(task => convertSupabaseTaskToLegacy(task, supabaseAttachments, supabaseComments));
+  const tasks = supabaseTasks.map(task => convertSupabaseTaskToLegacy(task, taskAttachments, taskComments));
 
   // State management
   const [state, setState] = useState<TaskManagerState>({
@@ -157,8 +168,25 @@ export const useUnifiedTaskManager = () => {
   const updateTask = useCallback(async (taskId: string, updates: Partial<Task>) => {
     if (!selectedWorkspace) return;
     
-    const supabaseUpdates = convertLegacyTaskToSupabase(updates, selectedWorkspace.id, '');
-    await updateSupabaseTask(taskId, supabaseUpdates as any);
+    // Create partial updates for Supabase
+    const supabaseUpdates: Partial<SupabaseTask> = {};
+    
+    if (updates.title !== undefined) supabaseUpdates.title = updates.title;
+    if (updates.description !== undefined) supabaseUpdates.description = updates.description;
+    if (updates.color !== undefined) supabaseUpdates.color = updates.color;
+    if (updates.priority !== undefined) supabaseUpdates.priority = updates.priority;
+    if (updates.categoryId !== undefined) supabaseUpdates.category_id = updates.categoryId || null;
+    if (updates.completed !== undefined) supabaseUpdates.completed = updates.completed;
+    if (updates.startTime !== undefined) supabaseUpdates.start_time = updates.startTime?.toISOString() || null;
+    if (updates.endTime !== undefined) supabaseUpdates.end_time = updates.endTime?.toISOString() || null;
+    if (updates.date !== undefined) supabaseUpdates.scheduled_date = updates.date?.toISOString().split('T')[0] || null;
+    if (updates.kanbanColumn !== undefined) supabaseUpdates.kanban_column = updates.kanbanColumn;
+    if (updates.quadrant !== undefined) supabaseUpdates.matrix_quadrant = updates.quadrant;
+    if (updates.isExpanded !== undefined) supabaseUpdates.is_expanded = updates.isExpanded;
+    if (updates.order !== undefined) supabaseUpdates.task_order = updates.order;
+    if (updates.parentId !== undefined) supabaseUpdates.parent_id = updates.parentId || null;
+    
+    await updateSupabaseTask(taskId, supabaseUpdates);
 
     setState(prev => {
       const updatedSelectedTask = prev.selectedTask?.id === taskId 
@@ -288,30 +316,45 @@ export const useUnifiedTaskManager = () => {
 
   // Comment and attachment management (improved)
   const addCommentToTask = useCallback(async (taskId: string, text: string, color: string) => {
-    await addComment({ task_id: taskId, text, color });
-  }, [addComment]);
+    await addTaskComment({ task_id: taskId, text, color });
+  }, [addTaskComment]);
 
   const addAttachmentToTask = useCallback(async (taskId: string, fileName: string, fileUrl: string, fileType?: string, fileSize?: number) => {
-    await addAttachment({
+    await addTaskAttachment({
       task_id: taskId,
       file_name: fileName,
       file_url: fileUrl,
       file_type: fileType,
       file_size: fileSize
     });
-  }, [addAttachment]);
+  }, [addTaskAttachment]);
 
-  const editComment = useCallback(() => {
-    console.log('editComment not yet implemented for Supabase');
-  }, []);
+  const editComment = useCallback(async (commentId: string, text: string) => {
+    await updateTaskComment(commentId, { text });
+  }, [updateTaskComment]);
 
-  const deleteComment = useCallback(() => {
-    console.log('deleteComment not yet implemented for Supabase');
-  }, []);
+  const deleteComment = useCallback(async (commentId: string) => {
+    await deleteTaskComment(commentId);
+  }, [deleteTaskComment]);
 
-  const changeCommentColor = useCallback(() => {
-    console.log('changeCommentColor not yet implemented for Supabase');
-  }, []);
+  const changeCommentColor = useCallback(async (commentId: string, color: string) => {
+    await updateTaskComment(commentId, { color });
+  }, [updateTaskComment]);
+
+  // File upload for attachments
+  const uploadTaskFile = useCallback(async (file: File, taskId: string) => {
+    const result = await uploadFile(file, taskId);
+    if (result) {
+      await addTaskAttachment({
+        task_id: taskId,
+        file_name: result.name,
+        file_url: result.url,
+        file_type: result.type,
+        file_size: result.size
+      });
+    }
+    return result;
+  }, [uploadFile, addTaskAttachment]);
 
   // Actions object for compatibility
   const actions: TaskActions = {
@@ -369,12 +412,15 @@ export const useUnifiedTaskManager = () => {
     setAddingSubTaskParent,
     
     // Improved comment/attachment management
-    comments: supabaseComments,
+    comments: taskComments,
+    attachments: taskAttachments,
     addComment: addCommentToTask,
     editComment,
     deleteComment,
     changeCommentColor,
     addAttachmentToTask,
+    uploadTaskFile,
+    deleteTaskAttachment,
     
     // Simplified link management
     taskLinks: [],
